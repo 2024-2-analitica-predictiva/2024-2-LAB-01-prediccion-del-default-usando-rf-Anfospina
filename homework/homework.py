@@ -92,156 +92,37 @@ y_test = data_test['default']
 # contener las siguientes capas:
 # - Transforma las variables categóricas usando el método
 #   one-hot-encoding.
-# - Ajusta un modelo de bosques aleatorios (Random Forest).
-
-
-
-pipeline = Pipeline([
-    ('preprocessor', ColumnTransformer(
-        transformers=[
-            ('cat', OneHotEncoder(), ['EDUCATION', 'MARRIAGE', 'SEX'])
-        ],
-        remainder='passthrough'  # Mantiene las otras columnas sin cambios
-    )),
-    ('model', RandomForestClassifier(random_state=42))
-])
-
-
-# # Paso 4.
-# # Optimice los hiperparametros del pipeline usando validación cruzada.
-# # Use 10 splits para la validación cruzada. Use la función de precision
-# # balanceada para medir la precisión del modelo.
-
-#hiperparametros para gridsearch
-#El param_grid es un diccionario que define los hiperparámetros a probar y sus valores correspondientes.
-#La sintaxis model__ se refiere al nombre del paso en el pipeline donde se encuentra el modelo (model, definido previamente en el pipeline).
-#n_estimator: Número de árboles en el bosque
-#max_depth: Profundidad máxima de los árboles
-#min_samples_split: Mínimo número de muestras necesarias para dividir un nodo.
-#min_samples_leaf: Número mínimo de muestras en una hoja.
-#max_features: Número máximo de características consideradas para dividir un nodo.
-
-param_grid = {
-    'model__n_estimators': [100],
-    'model__max_depth': [None],
-    'model__min_samples_split':[10],
-    'model__min_samples_leaf': [4],
-    'model__max_features': [25],
-}
-
-model= GridSearchCV(pipeline, 
-                    param_grid, 
-                    cv=10, 
-                    scoring='balanced_accuracy',
-                    n_jobs=-1,
-                    verbose=2
-)
-
-model.fit(x_train, y_train)
-
-#pipeline: El pipeline que incluye preprocesamiento y el modelo (preprocessor + RandomForestClassifier).
-#param_grid: Diccionario de hiperparámetros definido anteriormente.
-#cv=10:Define el número de particiones para la validación cruzada.
-#scoring="balanced_accuracy":   Métrica utilizada para evaluar el modelo.
-#verbose=1:Muestra mensajes detallados durante la ejecución
-
-
-# # Paso 5.
-# # Guarde el modelo como "files/models/model.pkl".
-
-
-file_path = "files/models/model.pkl" #Especifica dónde se guardará el modelo serializado
-os.makedirs(os.path.dirname(file_path), exist_ok=True)
-#os.makedirs():Crea el directorio especificado (files/models/) y cualquier subdirectorio necesario.
-#os.path.dirname(file_path):Extrae la ruta del directorio (files/models/) desde file_path.
-#exist_ok=True:Evita errores si el directorio ya existe.
-
-if os.path.exists(file_path):
-    os.remove(file_path)
-
-#os.path.exists(file_path):Comprueba si el archivo especificado ya existe.
-#os.remove(file_path):Elimina el archivo si está presente.
-
-# Guardar el modelo
-with open(file_path, "wb") as file:
-    pickle.dump(model, file)
-
-#open(file_path, "wb"): Abre el archivo en modo escritura binaria (wb).
-#pickle.dump(model, file):Serializa (convierte a formato binario) el objeto model y lo guarda en el archivo.
-
-# #
-# # Paso 6.
-# # Calcule las metricas de precision, precision balanceada, recall,
-# # y f1-score para los conjuntos de entrenamiento y prueba.
-# # Guardelas en el archivo files/output/metrics.json. Cada fila
-# # del archivo es un diccionario con las metricas de un modelo.
-# # Este diccionario tiene un campo para indicar si es el conjunto
-# # de entrenamiento o prueba. Por ejemplo:
-# # {'dataset': 'train', 'precision': 0.8, 'balanced_accuracy': 0.7, 'recall': 0.9, 'f1_score': 0.85}
-# # {'dataset': 'test', 'precision': 0.7, 'balanced_accuracy': 0.6, 'recall': 0.8, 'f1_score': 0.75}
-
-
-with open('files/models/model.pkl', 'rb') as f:
-    model = pickle.load(f)
-
-y_train_pred = model.predict(x_train)
-y_test_pred = model.predict(x_test)
-
-
-def metrics (y_true, y_pred, dataset):
-    return {
-    'type': 'metrics',
-    'dataset': dataset,
-    'precision': precision_score(y_true, y_pred),
-    'balanced_accuracy': balanced_accuracy_score(y_true, y_pred),
-    'recall': recall_score(y_true, y_pred),
-    'f1_score': f1_score(y_true, y_pred)
-    }
-
-metrics_train = metrics(y_train, y_train_pred, 'train')
-metrics_test = metrics(y_test, y_test_pred, 'test')
-
-
-# # Paso 7.
-# # Calcule las matrices de confusion para los conjuntos de entrenamiento y
-# # prueba. Guardelas en el archivo files/output/metrics.json. Cada fila
-# # del archivo es un diccionario con las metricas de un modelo.
-# # de entrenamiento o prueba. Por ejemplo:
-# #
-# # {'type': 'cm_matrix', 'dataset': 'train', 'true_0': {"predicted_0": 15562, "predicte_1": 666}, 'true_1': {"predicted_0": 3333, "predicted_1": 1444}}
-# # {'type': 'cm_matrix', 'dataset': 'test', 'true_0': {"predicted_0": 15562, "predicte_1": 650}, 'true_1': {"predicted_0": 2490, "predicted_1": 1420}}
-# #
-
-
-output_dir = "files/output"
-os.makedirs(output_dir, exist_ok=True)
-output_path = os.path.join(output_dir, "metrics.json")
-#output_dir: Especifica el directorio donde se guardará el archivo (files/output en este caso).
-#os.makedirs(output_dir, exist_ok=True):Crea el directorio especificado, junto con cualquier subdirectorio necesario.
-#Si el directorio ya existe, no genera un error debido a exist_ok=True.
-#os.path.join(output_dir, "metrics.json"):Une el directorio output_dir con el nombre del archivo "metrics.json", creando la ruta completa del archivo.
-
-
-# Eliminar el archivo si ya existe
-if os.path.exists(output_path):
-    os.remove(output_path)
-    
-# Crear las métricas de la matriz de confusión
-def cm_matrix(cm, dataset):
-    return {
-        'type': 'cm_matrix',
-        'dataset': dataset,
-        'true_0': {"predicted_0": cm[0, 0], "predicted_1": cm[0, 1]},
-        'true_1': {"predicted_0": cm[1, 0], "predicted_1": cm[1, 1]}
-    }
-
-# Calcular las matrices de confusión
-cm_train = confusion_matrix(y_train, y_train_pred)
-cm_test = confusion_matrix(y_test, y_test_pred)
-
-cm_matrix_train = cm_matrix(cm_train, 'train')
-cm_matrix_test = cm_matrix(cm_test, 'test')
-
-# Guardar las métricas
-metrics = [metrics_train, metrics_test, cm_matrix_train, cm_matrix_test]
-pd.DataFrame(metrics).to_json(output_path, orient='records', lines=True)
+# - Ajusta un modelo de bosques aleatorios (rando forest).
+#
+#
+# Paso 4.
+# Optimice los hiperparametros del pipeline usando validación cruzada.
+# Use 10 splits para la validación cruzada. Use la función de precision
+# balanceada para medir la precisión del modelo.
+#
+#
+# Paso 5.
+# Guarde el modelo como "files/models/model.pkl".
+#
+#
+# Paso 6.
+# Calcule las metricas de precision, precision balanceada, recall,
+# y f1-score para los conjuntos de entrenamiento y prueba.
+# Guardelas en el archivo files/output/metrics.json. Cada fila
+# del archivo es un diccionario con las metricas de un modelo.
+# Este diccionario tiene un campo para indicar si es el conjunto
+# de entrenamiento o prueba. Por ejemplo:
+#
+# {'dataset': 'train', 'precision': 0.8, 'balanced_accuracy': 0.7, 'recall': 0.9, 'f1_score': 0.85}
+# {'dataset': 'test', 'precision': 0.7, 'balanced_accuracy': 0.6, 'recall': 0.8, 'f1_score': 0.75}
+#
+#
+# Paso 7.
+# Calcule las matrices de confusion para los conjuntos de entrenamiento y
+# prueba. Guardelas en el archivo files/output/metrics.json. Cada fila
+# del archivo es un diccionario con las metricas de un modelo.
+# de entrenamiento o prueba. Por ejemplo:
+#
+# {'type': 'cm_matrix', 'dataset': 'train', 'true_0': {"predicted_0": 15562, "predicte_1": 666}, 'true_1': {"predicted_0": 3333, "predicted_1": 1444}}
+# {'type': 'cm_matrix', 'dataset': 'test', 'true_0': {"predicted_0": 15562, "predicte_1": 650}, 'true_1': {"predicted_0": 2490, "predicted_1": 1420}}
+#
