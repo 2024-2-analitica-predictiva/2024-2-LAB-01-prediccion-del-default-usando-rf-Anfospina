@@ -46,83 +46,180 @@
 #   de educación, agrupe estos valores en la categoría "others".
 # - Renombre la columna "default payment next month" a "default"
 # - Remueva la columna "ID".
-#
-
-# Carga de librerias
-import pandas as pd 
-from sklearn.model_selection import train_test_split, GridSearchCV 
-from sklearn.compose import ColumnTransformer 
-from sklearn.pipeline import Pipeline 
-from sklearn.preprocessing import OneHotEncoder, StandardScaler 
-from sklearn.ensemble import RandomForestClassifier 
-import pickle
+import pandas as pd
 import numpy as np
 import os
+import json
+import gzip
 import pickle
-from sklearn.metrics import precision_score, balanced_accuracy_score, recall_score, f1_score, confusion_matrix
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.ensemble import RandomForestClassifier
 
-# Se limpian los datos
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import (
+    precision_score,
+    recall_score,
+    f1_score,
+    balanced_accuracy_score,
+    confusion_matrix,
+)
 
-def clean_df(path):
+# Funcion para limpiar los datos
+
+def clean_data(path):
     
-    d_frame=pd.read_csv(path,index_col=False,compression='zip')
+    df=pd.read_csv(
+        path,
+        index_col=False,
+        compression='zip')
     
-    d_frame.rename(columns={'default payment next month': 'default'}, inplace=True)
-    d_frame.drop(columns='ID', inplace=True)
-    d_frame = d_frame.iloc[d_frame[(d_frame['EDUCATION'] != 0) & (d_frame['MARRIAGE'] != 0)].index]
-    d_frame['EDUCATION'] = d_frame['EDUCATION'].apply(lambda x: 4 if x > 4 else x)
+    df.rename(columns={'default payment next month': 'default'}, inplace=True)
+    df.drop(columns='ID', inplace=True)
+    df = df.iloc[df[(df['EDUCATION'] != 0) & (df['MARRIAGE'] != 0)].index]
+    df['EDUCATION'] = df['EDUCATION'].apply(lambda x: 4 if x > 4 else x)
 
  
-    return d_frame
+    return df
 
-data_train = clean_df('files/input/train_data.csv.zip')
-data_test = clean_df('files/input/test_data.csv.zip')
+df_train = clean_data('files/input/train_data.csv.zip')
+df_test = clean_data('files/input/test_data.csv.zip')
 
 # Paso 2.
 # Divida los datasets en x_train, y_train, x_test, y_test.
 
-x_train= data_train.drop(columns='default')
-y_train = data_train['default']
-x_test= data_test.drop(columns='default') 
-y_test = data_test['default']
-
+x_train= df_train.drop(columns='default')
+y_train = df_train['default']
+x_test= df_test.drop(columns='default')
+y_test = df_test['default']
 
 # Paso 3.
 # Cree un pipeline para el modelo de clasificación. Este pipeline debe
 # contener las siguientes capas:
-# - Transforma las variables categóricas usando el método
+# - Transforma las variables categoricas usando el método
 #   one-hot-encoding.
 # - Ajusta un modelo de bosques aleatorios (rando forest).
-#
-#
-# Paso 4.
-# Optimice los hiperparametros del pipeline usando validación cruzada.
-# Use 10 splits para la validación cruzada. Use la función de precision
-# balanceada para medir la precisión del modelo.
-#
-#
-# Paso 5.
-# Guarde el modelo como "files/models/model.pkl".
-#
-#
-# Paso 6.
-# Calcule las metricas de precision, precision balanceada, recall,
-# y f1-score para los conjuntos de entrenamiento y prueba.
-# Guardelas en el archivo files/output/metrics.json. Cada fila
-# del archivo es un diccionario con las metricas de un modelo.
-# Este diccionario tiene un campo para indicar si es el conjunto
-# de entrenamiento o prueba. Por ejemplo:
-#
-# {'dataset': 'train', 'precision': 0.8, 'balanced_accuracy': 0.7, 'recall': 0.9, 'f1_score': 0.85}
-# {'dataset': 'test', 'precision': 0.7, 'balanced_accuracy': 0.6, 'recall': 0.8, 'f1_score': 0.75}
-#
-#
-# Paso 7.
-# Calcule las matrices de confusion para los conjuntos de entrenamiento y
-# prueba. Guardelas en el archivo files/output/metrics.json. Cada fila
-# del archivo es un diccionario con las metricas de un modelo.
-# de entrenamiento o prueba. Por ejemplo:
-#
-# {'type': 'cm_matrix', 'dataset': 'train', 'true_0': {"predicted_0": 15562, "predicte_1": 666}, 'true_1': {"predicted_0": 3333, "predicted_1": 1444}}
-# {'type': 'cm_matrix', 'dataset': 'test', 'true_0': {"predicted_0": 15562, "predicte_1": 650}, 'true_1': {"predicted_0": 2490, "predicted_1": 1420}}
-#
+
+steps=[('preprocessor', ColumnTransformer(
+        transformers=[
+            ('cat', OneHotEncoder(), ['EDUCATION', 'MARRIAGE', 'SEX'])  # Creación de variables ficticticias (caracteristicas binarias)
+        ],
+        remainder='passthrough'  # Mantener el resto de las columnas sin cambios
+    )),
+       (('Random_Forest_Classifier', RandomForestClassifier(random_state=42)))
+    ]
+
+pipeline = Pipeline(steps)
+
+
+# # Paso 4.
+# # Optimice los hiperparametros del pipeline usando validación cruzada.
+# # Use 10 splits para la validación cruzada. Use la función de precision
+# # balanceada para medir la precisión del modelo.
+
+
+param_grid = {
+    'Random_Forest_Classifier__n_estimators': [100],
+    'Random_Forest_Classifier__max_depth': [None],
+    'Random_Forest_Classifier__min_samples_split':[10],
+    'Random_Forest_Classifier__min_samples_leaf': [4],
+    'Random_Forest_Classifier__max_features': [25], 
+}
+#Las claves son el nombre del paso del pipeline seguido de un doble guión bajo, seguido del nombre del hiperparámetro.
+
+#realizamos una búsqueda en cuadrícula sobre nuestros parámetros instanciando el objeto GridSearchCV.
+model= GridSearchCV(pipeline, 
+                    param_grid, 
+                    cv=10, 
+                    scoring='balanced_accuracy',
+                    n_jobs=-1,
+            
+)
+
+model.fit(x_train, y_train)
+
+
+# Paso 5: Guardar el modelo
+
+models_dir = 'files/models'
+os.makedirs(models_dir, exist_ok=True)
+
+#os.makedirs: Crea un directorio en la ruta especificada, incluidos todos los directorios intermedios necesarios. 
+# Por ejemplo, si files no existe, lo crea junto con models.
+# exist_ok=True: Evita que se genere un error si el directorio ya existe.
+# Si el directorio existe, simplemente no realiza ninguna acción.
+
+#guardar el modelo
+model_path = "files/models/model.pkl.gz"
+
+with gzip.open(model_path, "wb") as file:
+    pickle.dump(model, file)
+    
+#Abre el archivo en modo escritura binaria ("wb") y lo comprime utilizando el formato gzip.
+#Serializa el objeto model (generalmente, un modelo entrenado) y lo guarda en el archivo comprimido.
+
+# Paso 6: Cálculo de métricas
+def metrics_calculate(model, x_train, x_test, y_train, y_test):
+    
+    y_train_pred = model.predict(x_train)
+    y_test_pred = model.predict(x_test)
+
+    metrics = [
+        {
+            'type': 'metrics',
+            'dataset': 'train',
+            'precision': precision_score(y_train, y_train_pred, zero_division=0),
+            'balanced_accuracy': balanced_accuracy_score(y_train, y_train_pred),
+            'recall': recall_score(y_train, y_train_pred, zero_division=0),
+            'f1_score': f1_score(y_train, y_train_pred, zero_division=0)
+        },
+        {
+            'type': 'metrics',
+            'dataset': 'test',
+            'precision': precision_score(y_test, y_test_pred, zero_division=0),
+            'balanced_accuracy': balanced_accuracy_score(y_test, y_test_pred),
+            'recall': recall_score(y_test, y_test_pred, zero_division=0),
+            'f1_score': f1_score(y_test, y_test_pred, zero_division=0)
+        }
+    ]
+
+    os.makedirs("files/output", exist_ok=True)
+    with open("files/output/metrics.json", "w") as f:
+        for metric in metrics:
+            f.write(json.dumps(metric) + '\n')
+            
+#Abre (o crea) el archivo metrics.json en el directorio files/output en modo escritura ("w").
+#El uso de with asegura que el archivo se cierre correctamente después de escribir.
+
+
+# Paso 7: Cálculo de matrices de confusión
+def calculate_confusion_matrices(model, x_train, x_test, y_train, y_test):
+    y_train_pred = model.predict(x_train)
+    y_test_pred = model.predict(x_test)
+
+    cm_train = confusion_matrix(y_train, y_train_pred)
+    cm_test = confusion_matrix(y_test, y_test_pred)
+
+    matrices = [
+        {
+            'type': 'cm_matrix',
+            'dataset': 'train',
+            'true_0': {'predicted_0': int(cm_train[0, 0]), 'predicted_1': int(cm_train[0, 1])},
+            'true_1': {'predicted_0': int(cm_train[1, 0]), 'predicted_1': int(cm_train[1, 1])}
+        },
+        {
+            'type': 'cm_matrix',
+            'dataset': 'test',
+            'true_0': {'predicted_0': int(cm_test[0, 0]), 'predicted_1': int(cm_test[0, 1])},
+            'true_1': {'predicted_0': int(cm_test[1, 0]), 'predicted_1': int(cm_test[1, 1])}
+        }
+    ]
+
+    with open("files/output/metrics.json", "a") as f:
+        for matrix in matrices:
+            f.write(json.dumps(matrix) + '\n')
+
+# Ejecutar cálculo de métricas y matrices
+metrics_calculate(model, x_train, x_test, y_train, y_test)
+calculate_confusion_matrices(model, x_train, x_test, y_train, y_test)
